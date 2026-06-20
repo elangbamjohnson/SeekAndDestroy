@@ -27,6 +27,7 @@ Implemented:
   - local baseline save and compare.
   - new, changed, known, and no-baseline statuses.
   - basic persistence risk flags.
+  - code-signing enrichment for persistence executables.
 
 Planned next:
 
@@ -199,7 +200,7 @@ flowchart TD
   - SHA-256 hashing
   - launchd persistence
   - baseline comparison
-  - code-signing validation, planned
+  - persistence executable code-signing validation
   - YARA integration, planned
   - FSEvents monitoring, planned
   - Endpoint Security Framework, documented later
@@ -229,6 +230,7 @@ Sources/
       Hashing/                     streaming SHA-256 hashing
       ThreatIntel/                 local hash list loader
       Baseline/                    baseline JSON store
+      CodeSigning/                 Security.framework signature inspection
     Support/                       preserved local support files
     Resources/ThreatIntel/
       malicious_hashes.txt         local malicious hash list
@@ -289,7 +291,9 @@ Persistence items may be flagged when they look unusual:
 - `com.apple.*` label appears outside system locations
 - LaunchDaemon lives outside system locations
 - referenced executable is missing
-- executable has a pending code-signing check
+- executable is unsigned
+- executable is ad-hoc signed
+- executable has an invalid code signature
 
 These are suspicion signals, not final malware verdicts.
 
@@ -365,12 +369,12 @@ Done:
 - cron and periodic scripts
 - baseline save/load/compare
 - persistence risk flags
+- code-signing details for persistence executables
 
 Next:
 
 - richer login-item inspection
 - profile parsing
-- code-signing details for persistence executables
 
 ### Phase 3: YARA Integration
 

@@ -134,6 +134,43 @@ struct PersistenceScannerTests {
     }
 
     @Test
+    func attachesCodeSignatureAssessmentToLaunchdExecutables() throws {
+        let fixture = try PersistenceFixture()
+        defer {
+            fixture.cleanUp()
+        }
+
+        let executableURL = fixture.root.appendingPathComponent("helper.sh")
+        try "#!/bin/sh\n".write(to: executableURL, atomically: true, encoding: .utf8)
+
+        _ = try fixture.writeLaunchAgent(
+            label: "com.example.helper",
+            executablePath: executableURL.path
+        )
+
+        let inspector = FakeCodeSignatureInspector(result: CodeSignatureAssessment(
+            status: .adHoc,
+            signingIdentifier: "com.example.helper",
+            teamIdentifier: nil,
+            authorityNames: [],
+            isAppleSigned: false,
+            isAdHocSigned: true,
+            hasHardenedRuntime: false
+        ))
+        let scanner = PersistenceScanner(
+            codeSignatureInspector: inspector,
+            configuration: fixture.configuration
+        )
+
+        let item = scanner.scan().assessedItems[0].item
+
+        #expect(item.codeSignature?.status == .adHoc)
+        #expect(item.codeSignature?.signingIdentifier == "com.example.helper")
+        #expect(item.riskFlags.contains(.adHocSignedExecutable))
+        #expect(!item.riskFlags.contains(.unsignedExecutableCheckPending))
+    }
+
+    @Test
     func comparesCurrentItemsAgainstBaseline() throws {
         let fixture = try PersistenceFixture()
         defer {
@@ -192,6 +229,14 @@ struct PersistenceScannerTests {
 
         #expect(summary.isCancelled)
         #expect(summary.assessedItems.isEmpty)
+    }
+}
+
+private struct FakeCodeSignatureInspector: CodeSignatureInspecting {
+    let result: CodeSignatureAssessment
+
+    func inspectCodeSignature(at url: URL) -> CodeSignatureAssessment {
+        result
     }
 }
 

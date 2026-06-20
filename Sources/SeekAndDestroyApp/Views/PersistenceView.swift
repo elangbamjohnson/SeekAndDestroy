@@ -206,6 +206,10 @@ private struct PersistenceAssessmentRow: View {
                 LaunchdDetailsBlock(details: details)
             }
 
+            if let codeSignature = assessment.item.codeSignature {
+                CodeSignatureBlock(assessment: codeSignature)
+            }
+
             if !assessment.item.riskFlags.isEmpty {
                 Text(assessment.item.riskFlags.map(\.title).joined(separator: ", "))
                     .font(.caption)
@@ -226,6 +230,51 @@ private struct PersistenceAssessmentRow: View {
             return .green
         case .noBaseline:
             return .secondary
+        }
+    }
+}
+
+private struct CodeSignatureBlock: View {
+    let assessment: CodeSignatureAssessment
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            detailLine("Signature", assessment.status.rawValue)
+
+            if let teamIdentifier = assessment.teamIdentifier {
+                detailLine("Team ID", teamIdentifier)
+            }
+
+            if let signingIdentifier = assessment.signingIdentifier {
+                detailLine("Identifier", signingIdentifier)
+            }
+
+            detailLine("Apple Signed", assessment.isAppleSigned ? "true" : "false")
+            detailLine("Hardened Runtime", assessment.hasHardenedRuntime ? "true" : "false")
+
+            if !assessment.authorityNames.isEmpty {
+                detailLine("Authority", assessment.authorityNames.joined(separator: " -> "))
+            }
+
+            if let validationErrorDescription = assessment.validationErrorDescription {
+                detailLine("Validation", validationErrorDescription)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func detailLine(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 130, alignment: .leading)
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
         }
     }
 }

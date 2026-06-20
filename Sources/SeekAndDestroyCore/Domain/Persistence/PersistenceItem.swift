@@ -16,6 +16,7 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
     public let arguments: [String]
     public let contentSHA256: String?
     public let executableSHA256: String?
+    public let codeSignature: CodeSignatureAssessment?
     public let riskFlags: [PersistenceRiskFlag]
     public let launchdDetails: LaunchdDetails?
 
@@ -27,6 +28,7 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
         arguments: [String] = [],
         contentSHA256: String?,
         executableSHA256: String?,
+        codeSignature: CodeSignatureAssessment? = nil,
         riskFlags: [PersistenceRiskFlag] = [],
         launchdDetails: LaunchdDetails? = nil
     ) {
@@ -37,6 +39,7 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
         self.arguments = arguments
         self.contentSHA256 = contentSHA256
         self.executableSHA256 = executableSHA256
+        self.codeSignature = codeSignature
         self.riskFlags = riskFlags
         self.launchdDetails = launchdDetails
 
@@ -174,6 +177,9 @@ public enum PersistenceRiskFlag: String, Codable, CaseIterable, Sendable {
     case missingExecutable
     case rootDaemonOutsideSystemLocation
     case unsignedExecutableCheckPending
+    case unsignedExecutable
+    case adHocSignedExecutable
+    case invalidCodeSignature
 
     public var title: String {
         switch self {
@@ -189,6 +195,12 @@ public enum PersistenceRiskFlag: String, Codable, CaseIterable, Sendable {
             return "Daemon outside system path"
         case .unsignedExecutableCheckPending:
             return "Code-signing check pending"
+        case .unsignedExecutable:
+            return "Unsigned executable"
+        case .adHocSignedExecutable:
+            return "Ad-hoc signed executable"
+        case .invalidCodeSignature:
+            return "Invalid code signature"
         }
     }
 }

@@ -74,15 +74,18 @@ public struct PersistenceScanConfiguration: Sendable {
 public struct PersistenceScanner {
     private let fileManager: FileManager
     private let hasher: any FileHashing
+    private let codeSignatureInspector: any CodeSignatureInspecting
     private let configuration: PersistenceScanConfiguration
 
     public init(
         fileManager: FileManager = .default,
         hasher: any FileHashing = SHA256FileHasher(),
+        codeSignatureInspector: any CodeSignatureInspecting = SecurityFrameworkCodeSignatureInspector(),
         configuration: PersistenceScanConfiguration = .liveSystem()
     ) {
         self.fileManager = fileManager
         self.hasher = hasher
+        self.codeSignatureInspector = codeSignatureInspector
         self.configuration = configuration
     }
 
@@ -202,6 +205,7 @@ public struct PersistenceScanner {
             let beforeCount = items.count
             let status = enumerateRegularFiles(in: directory, allowedExtension: nil, shouldCancel: shouldCancel, isCancelled: &isCancelled) { scriptURL in
                 let sourceHash = try? hasher.sha256(forFileAt: scriptURL)
+                let codeSignature = inspectExecutable(atPath: scriptURL.path)
                 items.append(PersistenceItem(
                     kind: .periodicScript,
                     label: scriptURL.lastPathComponent,
@@ -209,7 +213,8 @@ public struct PersistenceScanner {
                     executablePath: scriptURL.path,
                     contentSHA256: sourceHash,
                     executableSHA256: sourceHash,
-                    riskFlags: riskFlags(kind: .periodicScript, label: scriptURL.lastPathComponent, sourceURL: scriptURL, executablePath: scriptURL.path)
+                    codeSignature: codeSignature,
+                    riskFlags: riskFlags(kind: .periodicScript, label: scriptURL.lastPathComponent, sourceURL: scriptURL, executablePath: scriptURL.path, codeSignature: codeSignature)
                 ))
             }
             checks.append(PersistenceLocationCheck(
@@ -262,6 +267,7 @@ public struct PersistenceScanner {
         let executablePath = dictionary["Program"] as? String ?? arguments.first
         let sourceHash = try? hasher.sha256(forFileAt: plistURL)
         let executableHash = executablePath.flatMap { hashExecutable(atPath: $0) }
+        let codeSignature = executablePath.flatMap { inspectExecutable(atPath: $0) }
         let launchdDetails = parseLaunchdDetails(from: dictionary)
 
         return PersistenceItem(
@@ -272,7 +278,8 @@ public struct PersistenceScanner {
             arguments: arguments,
             contentSHA256: sourceHash,
             executableSHA256: executableHash,
-            riskFlags: riskFlags(kind: kind, label: label, sourceURL: plistURL, executablePath: executablePath),
+            codeSignature: codeSignature,
+            riskFlags: riskFlags(kind: kind, label: label, sourceURL: plistURL, executablePath: executablePath, codeSignature: codeSignature),
             launchdDetails: launchdDetails
         )
     }
@@ -450,6 +457,11 @@ public struct PersistenceScanner {
         return try? hasher.sha256(forFileAt: URL(fileURLWithPath: expandedPath))
     }
 
+    private func inspectExecutable(atPath path: String) -> CodeSignatureAssessment {
+        let expandedPath = (path as NSString).expandingTildeInPath
+        return codeSignatureInspector.inspectCodeSignature(at: URL(fileURLWithPath: expandedPath))
+    }
+
     private func assess(items: [PersistenceItem], baseline: PersistenceBaseline?) -> [PersistenceAssessment] {
         guard let baseline else {
             return items.map { PersistenceAssessment(item: $0, baselineStatus: .noBaseline) }
@@ -474,7 +486,8 @@ public struct PersistenceScanner {
         kind: PersistenceItemKind,
         label: String,
         sourceURL: URL,
-        executablePath: String?
+        executablePath: String?,
+        codeSignature: CodeSignatureAssessment?
     ) -> [PersistenceRiskFlag] {
         var flags: [PersistenceRiskFlag] = []
         let sourcePath = sourceURL.path
@@ -500,8 +513,17 @@ public struct PersistenceScanner {
             flags.append(.missingExecutable)
         }
 
-        if executablePath != nil {
-            flags.append(.unsignedExecutableCheckPending)
+        switch codeSignature?.status {
+        case .unsigned:
+            flags.append(.unsignedExecutable)
+        case .adHoc:
+            flags.append(.adHocSignedExecutable)
+        case .invalid, .inspectionFailed:
+            flags.append(.invalidCodeSignature)
+        case .missingExecutable:
+            flags.append(.missingExecutable)
+        case .valid, .none:
+            break
         }
 
         return Array(Set(flags)).sorted { $0.rawValue < $1.rawValue }
