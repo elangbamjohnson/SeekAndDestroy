@@ -206,6 +206,10 @@ private struct PersistenceAssessmentRow: View {
                 LaunchdDetailsBlock(details: details)
             }
 
+            if let details = assessment.item.configurationProfileDetails, details.hasDisplayedValues {
+                ConfigurationProfileDetailsBlock(details: details)
+            }
+
             if let codeSignature = assessment.item.codeSignature {
                 CodeSignatureBlock(assessment: codeSignature)
             }
@@ -234,6 +238,68 @@ private struct PersistenceAssessmentRow: View {
             return .green
         case .noBaseline:
             return .secondary
+        }
+    }
+}
+
+private struct ConfigurationProfileDetailsBlock: View {
+    let details: ConfigurationProfileDetails
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let identifier = details.identifier {
+                detailLine("Identifier", identifier)
+            }
+
+            if let uuid = details.uuid {
+                detailLine("UUID", uuid)
+            }
+
+            if let organization = details.organization {
+                detailLine("Organization", organization)
+            }
+
+            if let profileDescription = details.profileDescription {
+                detailLine("Description", profileDescription)
+            }
+
+            if let removalDisallowed = details.removalDisallowed {
+                detailLine("Removal", removalDisallowed ? "disallowed" : "allowed")
+            }
+
+            if let payloadType = details.payloadType {
+                detailLine("Payload Type", payloadType)
+            }
+
+            if let payloadVersion = details.payloadVersion {
+                detailLine("Payload Version", "\(payloadVersion)")
+            }
+
+            detailLine("Payload Count", "\(details.payloadCount)")
+
+            if !details.payloadTypes.isEmpty {
+                detailLine("Payload Types", details.payloadTypes.joined(separator: ", "))
+            }
+
+            if !details.payloadIdentifiers.isEmpty {
+                detailLine("Payload IDs", details.payloadIdentifiers.joined(separator: ", "))
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func detailLine(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 130, alignment: .leading)
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
         }
     }
 }

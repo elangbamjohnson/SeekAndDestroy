@@ -104,7 +104,7 @@ public struct PersistenceScanner {
         scanLaunchd(kind: .launchDaemon, directories: configuration.launchDaemonDirectories, items: &items, checks: &checks, shouldCancel: shouldCancel, isCancelled: &isCancelled)
         scanCronFiles(items: &items, checks: &checks, shouldCancel: shouldCancel, isCancelled: &isCancelled)
         scanPeriodicScripts(items: &items, checks: &checks, shouldCancel: shouldCancel, isCancelled: &isCancelled)
-        recordBestEffortLocations(title: "Configuration Profiles", locations: configuration.profileLocations, checks: &checks, shouldCancel: shouldCancel, isCancelled: &isCancelled)
+        scanConfigurationProfiles(items: &items, checks: &checks, shouldCancel: shouldCancel, isCancelled: &isCancelled)
         scanLoginItems(items: &items, checks: &checks, shouldCancel: shouldCancel, isCancelled: &isCancelled)
 
         return PersistenceScanSummary(
@@ -229,31 +229,177 @@ public struct PersistenceScanner {
         }
     }
 
-    private func recordBestEffortLocations(
-        title: String,
-        locations: [URL],
+    private func scanConfigurationProfiles(
+        items: inout [PersistenceItem],
         checks: inout [PersistenceLocationCheck],
         shouldCancel: @escaping @Sendable () -> Bool,
         isCancelled: inout Bool
     ) {
-        for location in locations {
+        for location in configuration.profileLocations {
             guard !isCancelled, !shouldCancel() else {
                 isCancelled = true
                 break
             }
 
-            var isDirectory: ObjCBool = false
-            guard fileManager.fileExists(atPath: location.path, isDirectory: &isDirectory) else {
-                checks.append(PersistenceLocationCheck(title: title, url: location, status: .missing))
-                continue
-            }
-
+            let beforeCount = items.count
+            let status = scanConfigurationProfileLocation(location, items: &items, shouldCancel: shouldCancel, isCancelled: &isCancelled)
             checks.append(PersistenceLocationCheck(
-                title: title,
+                title: "Configuration Profiles",
                 url: location,
-                status: isDirectory.boolValue ? .bestEffort : .scanned
+                status: status,
+                itemCount: items.count - beforeCount
             ))
         }
+    }
+
+    private func scanConfigurationProfileLocation(
+        _ location: URL,
+        items: inout [PersistenceItem],
+        shouldCancel: @escaping @Sendable () -> Bool,
+        isCancelled: inout Bool
+    ) -> PersistenceLocationStatus {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: location.path, isDirectory: &isDirectory) else {
+            return .missing
+        }
+
+        if isDirectory.boolValue {
+            return enumerateRegularFiles(in: location, allowedExtension: nil, shouldCancel: shouldCancel, isCancelled: &isCancelled) { profileURL in
+                guard isLikelyConfigurationProfileArtifact(profileURL),
+                      let item = configurationProfileItem(profileURL: profileURL)
+                else {
+                    return
+                }
+
+                items.append(item)
+            }
+        }
+
+        guard isLikelyConfigurationProfileArtifact(location) else {
+            return .scanned
+        }
+
+        if let item = configurationProfileItem(profileURL: location) {
+            items.append(item)
+        }
+
+        return .scanned
+    }
+
+    private func isLikelyConfigurationProfileArtifact(_ url: URL) -> Bool {
+        let fileExtension = url.pathExtension.lowercased()
+        return fileExtension == "mobileconfig"
+            || fileExtension == "plist"
+            || fileExtension == "profile"
+    }
+
+    private func configurationProfileItem(profileURL: URL) -> PersistenceItem? {
+        guard
+            let data = try? Data(contentsOf: profileURL),
+            let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+            let dictionary = plist as? [String: Any],
+            let details = parseConfigurationProfileDetails(from: dictionary)
+        else {
+            return nil
+        }
+
+        let sourceHash = try? hasher.sha256(forFileAt: profileURL)
+        let label = details.displayName ?? details.identifier ?? profileURL.deletingPathExtension().lastPathComponent
+
+        return PersistenceItem(
+            kind: .configurationProfile,
+            label: label,
+            sourceURL: profileURL,
+            executablePath: nil,
+            arguments: details.payloadTypes,
+            contentSHA256: sourceHash,
+            executableSHA256: nil,
+            riskFlags: configurationProfileRiskFlags(details),
+            configurationProfileDetails: details
+        )
+    }
+
+    private func parseConfigurationProfileDetails(from dictionary: [String: Any]) -> ConfigurationProfileDetails? {
+        let payloadDictionaries = profilePayloadDictionaries(from: dictionary)
+        let hasProfileShape = dictionary["PayloadIdentifier"] != nil
+            || dictionary["PayloadUUID"] != nil
+            || dictionary["PayloadType"] != nil
+            || dictionary["PayloadContent"] != nil
+
+        guard hasProfileShape else {
+            return nil
+        }
+
+        let payloadTypes = sortedUniqueStrings(payloadDictionaries.compactMap { $0["PayloadType"] as? String })
+        let payloadIdentifiers = sortedUniqueStrings(payloadDictionaries.compactMap { $0["PayloadIdentifier"] as? String })
+
+        return ConfigurationProfileDetails(
+            displayName: dictionary["PayloadDisplayName"] as? String,
+            identifier: dictionary["PayloadIdentifier"] as? String,
+            uuid: dictionary["PayloadUUID"] as? String,
+            organization: dictionary["PayloadOrganization"] as? String,
+            profileDescription: dictionary["PayloadDescription"] as? String,
+            removalDisallowed: dictionary["PayloadRemovalDisallowed"] as? Bool,
+            payloadType: dictionary["PayloadType"] as? String,
+            payloadVersion: dictionary["PayloadVersion"] as? Int,
+            payloadCount: payloadDictionaries.count,
+            payloadTypes: payloadTypes,
+            payloadIdentifiers: payloadIdentifiers
+        )
+    }
+
+    private func profilePayloadDictionaries(from dictionary: [String: Any]) -> [[String: Any]] {
+        guard let payloadContent = dictionary["PayloadContent"] else {
+            return []
+        }
+
+        if let payloads = payloadContent as? [[String: Any]] {
+            return payloads
+        }
+
+        if let payloads = payloadContent as? [Any] {
+            return payloads.compactMap { $0 as? [String: Any] }
+        }
+
+        if let payload = payloadContent as? [String: Any] {
+            return [payload]
+        }
+
+        return []
+    }
+
+    private func sortedUniqueStrings(_ values: [String]) -> [String] {
+        Array(Set(values)).sorted()
+    }
+
+    private func configurationProfileRiskFlags(_ details: ConfigurationProfileDetails) -> [PersistenceRiskFlag] {
+        var flags: [PersistenceRiskFlag] = []
+        let payloadTypes = details.payloadTypes.map { $0.lowercased() }
+
+        if details.removalDisallowed == true {
+            flags.append(.nonRemovableConfigurationProfile)
+        }
+
+        if payloadTypes.contains(where: { payloadType in
+            payloadType.contains("certificate")
+                || payloadType.contains("security.root")
+                || payloadType.contains("security.pkcs")
+                || payloadType.contains("security.pem")
+        }) {
+            flags.append(.configurationProfileInstallsCertificate)
+        }
+
+        if payloadTypes.contains(where: { payloadType in
+            payloadType.contains("proxy")
+                || payloadType.contains("dns")
+                || payloadType.contains("vpn")
+                || payloadType.contains("webcontent-filter")
+                || payloadType.contains("network")
+        }) {
+            flags.append(.configurationProfileControlsNetwork)
+        }
+
+        return Array(Set(flags)).sorted { $0.rawValue < $1.rawValue }
     }
 
     private func scanLoginItems(

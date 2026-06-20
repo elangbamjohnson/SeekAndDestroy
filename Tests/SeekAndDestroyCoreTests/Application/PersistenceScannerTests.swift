@@ -249,6 +249,77 @@ struct PersistenceScannerTests {
     }
 
     @Test
+    func scansConfigurationProfiles() throws {
+        let fixture = try PersistenceFixture()
+        defer {
+            fixture.cleanUp()
+        }
+
+        _ = try fixture.writeConfigurationProfile(
+            fileName: "example.mobileconfig",
+            body: """
+              <key>PayloadDisplayName</key>
+              <string>Example Managed Network</string>
+              <key>PayloadIdentifier</key>
+              <string>com.example.profile.network</string>
+              <key>PayloadUUID</key>
+              <string>11111111-2222-3333-4444-555555555555</string>
+              <key>PayloadOrganization</key>
+              <string>Example Org</string>
+              <key>PayloadDescription</key>
+              <string>Installs managed network settings for testing.</string>
+              <key>PayloadRemovalDisallowed</key>
+              <true/>
+              <key>PayloadType</key>
+              <string>Configuration</string>
+              <key>PayloadVersion</key>
+              <integer>1</integer>
+              <key>PayloadContent</key>
+              <array>
+                <dict>
+                  <key>PayloadDisplayName</key>
+                  <string>DNS Settings</string>
+                  <key>PayloadIdentifier</key>
+                  <string>com.example.profile.network.dns</string>
+                  <key>PayloadType</key>
+                  <string>com.apple.dnsSettings.managed</string>
+                  <key>PayloadVersion</key>
+                  <integer>1</integer>
+                </dict>
+                <dict>
+                  <key>PayloadDisplayName</key>
+                  <string>Root Certificate</string>
+                  <key>PayloadIdentifier</key>
+                  <string>com.example.profile.network.root</string>
+                  <key>PayloadType</key>
+                  <string>com.apple.security.root</string>
+                  <key>PayloadVersion</key>
+                  <integer>1</integer>
+                </dict>
+              </array>
+            """
+        )
+
+        let summary = fixture.scanner().scan()
+        let item = try #require(summary.assessedItems.first { $0.item.kind == .configurationProfile }?.item)
+        let details = try #require(item.configurationProfileDetails)
+
+        #expect(item.label == "Example Managed Network")
+        #expect(item.contentSHA256 != nil)
+        #expect(details.identifier == "com.example.profile.network")
+        #expect(details.uuid == "11111111-2222-3333-4444-555555555555")
+        #expect(details.organization == "Example Org")
+        #expect(details.removalDisallowed == true)
+        #expect(details.payloadCount == 2)
+        #expect(details.payloadTypes == ["com.apple.dnsSettings.managed", "com.apple.security.root"])
+        #expect(details.payloadIdentifiers == ["com.example.profile.network.dns", "com.example.profile.network.root"])
+        #expect(item.riskFlags.contains(.nonRemovableConfigurationProfile))
+        #expect(item.riskFlags.contains(.configurationProfileControlsNetwork))
+        #expect(item.riskFlags.contains(.configurationProfileInstallsCertificate))
+        #expect(summary.checkedLocations.contains { $0.title == "Configuration Profiles" && $0.status == .scanned && $0.itemCount == 1 })
+    }
+
+    @Test
     func comparesCurrentItemsAgainstBaseline() throws {
         let fixture = try PersistenceFixture()
         defer {
@@ -329,6 +400,7 @@ private struct FakeLoginItemInventoryProvider: LoginItemInventoryProviding {
 private struct PersistenceFixture {
     let root: URL
     let launchAgents: URL
+    let profiles: URL
     let configuration: PersistenceScanConfiguration
     let emptyLoginItemProvider = FakeLoginItemInventoryProvider(inventory: LoginItemInventory(
         items: [],
@@ -339,7 +411,9 @@ private struct PersistenceFixture {
         root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         launchAgents = root.appendingPathComponent("LaunchAgents", isDirectory: true)
+        profiles = root.appendingPathComponent("Profiles", isDirectory: true)
         try FileManager.default.createDirectory(at: launchAgents, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: profiles, withIntermediateDirectories: true)
 
         configuration = PersistenceScanConfiguration(
             launchAgentDirectories: [launchAgents],
@@ -347,7 +421,7 @@ private struct PersistenceFixture {
             cronFiles: [],
             cronDirectories: [],
             periodicDirectories: [],
-            profileLocations: [],
+            profileLocations: [profiles],
             loginItemLocations: []
         )
     }
@@ -381,6 +455,21 @@ private struct PersistenceFixture {
         """.write(to: plistURL, atomically: true, encoding: .utf8)
 
         return plistURL
+    }
+
+    func writeConfigurationProfile(fileName: String, body: String) throws -> URL {
+        let profileURL = profiles.appendingPathComponent(fileName)
+        try """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+        \(body)
+        </dict>
+        </plist>
+        """.write(to: profileURL, atomically: true, encoding: .utf8)
+
+        return profileURL
     }
 
     func cleanUp() {

@@ -375,10 +375,10 @@ Done:
 - persistence risk flags
 - code-signing details for persistence executables
 - Login Items and Background Task Management inventory
+- configuration profile parsing
 
 Next:
 
-- profile parsing
 - richer Login Items parsing if Apple exposes more stable metadata
 
 ### Phase 3: YARA Integration

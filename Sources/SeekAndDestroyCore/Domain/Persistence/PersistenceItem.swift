@@ -19,6 +19,7 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
     public let codeSignature: CodeSignatureAssessment?
     public let riskFlags: [PersistenceRiskFlag]
     public let launchdDetails: LaunchdDetails?
+    public let configurationProfileDetails: ConfigurationProfileDetails?
     public let loginItemDetails: LoginItemDetails?
 
     public init(
@@ -32,6 +33,7 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
         codeSignature: CodeSignatureAssessment? = nil,
         riskFlags: [PersistenceRiskFlag] = [],
         launchdDetails: LaunchdDetails? = nil,
+        configurationProfileDetails: ConfigurationProfileDetails? = nil,
         loginItemDetails: LoginItemDetails? = nil
     ) {
         self.kind = kind
@@ -44,6 +46,7 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
         self.codeSignature = codeSignature
         self.riskFlags = riskFlags
         self.launchdDetails = launchdDetails
+        self.configurationProfileDetails = configurationProfileDetails
         self.loginItemDetails = loginItemDetails
 
         let sourcePath = self.sourceURL?.path ?? "no-source"
@@ -183,6 +186,9 @@ public enum PersistenceRiskFlag: String, Codable, CaseIterable, Sendable {
     case unsignedExecutable
     case adHocSignedExecutable
     case invalidCodeSignature
+    case nonRemovableConfigurationProfile
+    case configurationProfileInstallsCertificate
+    case configurationProfileControlsNetwork
 
     public var title: String {
         switch self {
@@ -204,6 +210,12 @@ public enum PersistenceRiskFlag: String, Codable, CaseIterable, Sendable {
             return "Ad-hoc signed executable"
         case .invalidCodeSignature:
             return "Invalid code signature"
+        case .nonRemovableConfigurationProfile:
+            return "Non-removable configuration profile"
+        case .configurationProfileInstallsCertificate:
+            return "Profile installs certificate material"
+        case .configurationProfileControlsNetwork:
+            return "Profile controls network settings"
         }
     }
 }
