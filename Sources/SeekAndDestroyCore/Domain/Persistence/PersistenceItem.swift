@@ -19,6 +19,7 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
     public let codeSignature: CodeSignatureAssessment?
     public let riskFlags: [PersistenceRiskFlag]
     public let launchdDetails: LaunchdDetails?
+    public let loginItemDetails: LoginItemDetails?
 
     public init(
         kind: PersistenceItemKind,
@@ -30,7 +31,8 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
         executableSHA256: String?,
         codeSignature: CodeSignatureAssessment? = nil,
         riskFlags: [PersistenceRiskFlag] = [],
-        launchdDetails: LaunchdDetails? = nil
+        launchdDetails: LaunchdDetails? = nil,
+        loginItemDetails: LoginItemDetails? = nil
     ) {
         self.kind = kind
         self.label = label
@@ -42,6 +44,7 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
         self.codeSignature = codeSignature
         self.riskFlags = riskFlags
         self.launchdDetails = launchdDetails
+        self.loginItemDetails = loginItemDetails
 
         let sourcePath = self.sourceURL?.path ?? "no-source"
         self.id = "\(kind.rawValue)|\(sourcePath)|\(label)"

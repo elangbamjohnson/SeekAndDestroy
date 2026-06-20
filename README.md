@@ -23,7 +23,8 @@ Implemented:
   - LaunchAgents and LaunchDaemons.
   - cron files and cron tab directories.
   - periodic script directories.
-  - best-effort configuration profile and login-item location checks.
+  - best-effort configuration profile checks.
+  - Login Items and Background Task Management inventory when macOS allows access.
   - local baseline save and compare.
   - new, changed, known, and no-baseline statuses.
   - basic persistence risk flags.
@@ -231,6 +232,7 @@ Sources/
       ThreatIntel/                 local hash list loader
       Baseline/                    baseline JSON store
       CodeSigning/                 Security.framework signature inspection
+      LoginItems/                  Background Task Management/Login Items inventory
     Support/                       preserved local support files
     Resources/ThreatIntel/
       malicious_hashes.txt         local malicious hash list
@@ -309,6 +311,8 @@ For broader personal scanning later, the app may need:
 - a privileged helper for selected operations
 - Endpoint Security entitlement if true real-time protection is added
 
+Modern Login Items and Background Task Management records may also require macOS authorization to inspect. When the system denies access, the Persistence view reports `Permission Denied` instead of treating the inventory as empty.
+
 ## Safety Rules
 
 - The app does not auto-delete files.
@@ -370,11 +374,12 @@ Done:
 - baseline save/load/compare
 - persistence risk flags
 - code-signing details for persistence executables
+- Login Items and Background Task Management inventory
 
 Next:
 
-- richer login-item inspection
 - profile parsing
+- richer Login Items parsing if Apple exposes more stable metadata
 
 ### Phase 3: YARA Integration
 

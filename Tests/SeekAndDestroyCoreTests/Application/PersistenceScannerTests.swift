@@ -26,7 +26,7 @@ struct PersistenceScannerTests {
             executablePath: executableURL.path
         )
 
-        let scanner = PersistenceScanner(configuration: fixture.configuration)
+        let scanner = fixture.scanner()
         let summary = scanner.scan()
 
         #expect(summary.assessedItems.count == 1)
@@ -112,7 +112,7 @@ struct PersistenceScannerTests {
             """
         )
 
-        let scanner = PersistenceScanner(configuration: fixture.configuration)
+        let scanner = fixture.scanner()
         let item = scanner.scan().assessedItems[0].item
         let details = try #require(item.launchdDetails)
 
@@ -159,6 +159,7 @@ struct PersistenceScannerTests {
         ))
         let scanner = PersistenceScanner(
             codeSignatureInspector: inspector,
+            loginItemInventoryProvider: fixture.emptyLoginItemProvider,
             configuration: fixture.configuration
         )
 
@@ -168,6 +169,83 @@ struct PersistenceScannerTests {
         #expect(item.codeSignature?.signingIdentifier == "com.example.helper")
         #expect(item.riskFlags.contains(.adHocSignedExecutable))
         #expect(!item.riskFlags.contains(.unsignedExecutableCheckPending))
+    }
+
+    @Test
+    func includesLoginItemsFromInventoryProvider() throws {
+        let fixture = try PersistenceFixture()
+        defer {
+            fixture.cleanUp()
+        }
+
+        let executableURL = fixture.root.appendingPathComponent("LoginHelper")
+        try Data("helper".utf8).write(to: executableURL)
+
+        let loginItem = LoginItemDetails(
+            displayName: "Example Login Helper",
+            bundleIdentifier: "com.example.loginhelper",
+            teamIdentifier: "TEAM123456",
+            developerName: "Example Developer",
+            itemType: "app",
+            disposition: "enabled",
+            bundleURL: fixture.root.appendingPathComponent("Example.app", isDirectory: true),
+            executableURL: executableURL
+        )
+        let scanner = PersistenceScanner(
+            codeSignatureInspector: FakeCodeSignatureInspector(result: CodeSignatureAssessment(
+                status: .valid,
+                signingIdentifier: "com.example.loginhelper",
+                teamIdentifier: "TEAM123456",
+                authorityNames: ["Developer ID Application: Example Developer"],
+                isAppleSigned: false,
+                isAdHocSigned: false,
+                hasHardenedRuntime: true
+            )),
+            loginItemInventoryProvider: FakeLoginItemInventoryProvider(inventory: LoginItemInventory(
+                items: [loginItem],
+                status: .scanned
+            )),
+            configuration: fixture.configuration
+        )
+
+        let summary = scanner.scan()
+        let item = try #require(summary.assessedItems.first { $0.item.kind == .loginItem }?.item)
+
+        #expect(item.label == "Example Login Helper")
+        #expect(item.loginItemDetails?.bundleIdentifier == "com.example.loginhelper")
+        #expect(item.codeSignature?.teamIdentifier == "TEAM123456")
+        #expect(item.codeSignature?.hasHardenedRuntime == true)
+        #expect(summary.checkedLocations.contains { $0.title == "Login Items" && $0.status == .scanned && $0.itemCount == 1 })
+    }
+
+    @Test
+    func parsesLoginItemDumpRecords() {
+        let output = """
+        Name: Example Login Helper
+        Bundle Identifier: com.example.loginhelper
+        Team Identifier: TEAM123456
+        Developer Name: Example Developer
+        Type: app
+        Disposition: enabled
+        Bundle URL: /Applications/Example.app
+        Executable Path: /Applications/Example.app/Contents/MacOS/Example
+
+        Name: Other Background Item
+        Identifier: com.example.other
+        URL: file:///Applications/Other.app
+        """
+
+        let items = LoginItemDumpParser.parse(output)
+
+        #expect(items.count == 2)
+        #expect(items[0].displayName == "Example Login Helper")
+        #expect(items[0].bundleIdentifier == "com.example.loginhelper")
+        #expect(items[0].teamIdentifier == "TEAM123456")
+        #expect(items[0].bundleURL?.path == "/Applications/Example.app")
+        #expect(items[0].executableURL?.path == "/Applications/Example.app/Contents/MacOS/Example")
+        #expect(items[1].displayName == "Other Background Item")
+        #expect(items[1].bundleIdentifier == "com.example.other")
+        #expect(items[1].bundleURL?.path == "/Applications/Other.app")
     }
 
     @Test
@@ -185,7 +263,7 @@ struct PersistenceScannerTests {
             executablePath: executableURL.path
         )
 
-        let scanner = PersistenceScanner(configuration: fixture.configuration)
+        let scanner = fixture.scanner()
         let baseline = scanner.createBaseline()
 
         try """
@@ -224,7 +302,7 @@ struct PersistenceScannerTests {
             executablePath: "/tmp/helper.sh"
         )
 
-        let scanner = PersistenceScanner(configuration: fixture.configuration)
+        let scanner = fixture.scanner()
         let summary = scanner.scan(shouldCancel: { true })
 
         #expect(summary.isCancelled)
@@ -240,10 +318,22 @@ private struct FakeCodeSignatureInspector: CodeSignatureInspecting {
     }
 }
 
+private struct FakeLoginItemInventoryProvider: LoginItemInventoryProviding {
+    let inventory: LoginItemInventory
+
+    func inventoryLoginItems() -> LoginItemInventory {
+        inventory
+    }
+}
+
 private struct PersistenceFixture {
     let root: URL
     let launchAgents: URL
     let configuration: PersistenceScanConfiguration
+    let emptyLoginItemProvider = FakeLoginItemInventoryProvider(inventory: LoginItemInventory(
+        items: [],
+        status: .scanned
+    ))
 
     init() throws {
         root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
@@ -295,5 +385,15 @@ private struct PersistenceFixture {
 
     func cleanUp() {
         try? FileManager.default.removeItem(at: root)
+    }
+
+    func scanner(
+        codeSignatureInspector: any CodeSignatureInspecting = FakeCodeSignatureInspector(result: CodeSignatureAssessment(status: .unsigned))
+    ) -> PersistenceScanner {
+        PersistenceScanner(
+            codeSignatureInspector: codeSignatureInspector,
+            loginItemInventoryProvider: emptyLoginItemProvider,
+            configuration: configuration
+        )
     }
 }

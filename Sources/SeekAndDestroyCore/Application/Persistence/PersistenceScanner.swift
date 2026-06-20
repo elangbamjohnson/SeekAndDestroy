@@ -75,17 +75,20 @@ public struct PersistenceScanner {
     private let fileManager: FileManager
     private let hasher: any FileHashing
     private let codeSignatureInspector: any CodeSignatureInspecting
+    private let loginItemInventoryProvider: any LoginItemInventoryProviding
     private let configuration: PersistenceScanConfiguration
 
     public init(
         fileManager: FileManager = .default,
         hasher: any FileHashing = SHA256FileHasher(),
         codeSignatureInspector: any CodeSignatureInspecting = SecurityFrameworkCodeSignatureInspector(),
+        loginItemInventoryProvider: any LoginItemInventoryProviding = SystemLoginItemInventoryProvider(),
         configuration: PersistenceScanConfiguration = .liveSystem()
     ) {
         self.fileManager = fileManager
         self.hasher = hasher
         self.codeSignatureInspector = codeSignatureInspector
+        self.loginItemInventoryProvider = loginItemInventoryProvider
         self.configuration = configuration
     }
 
@@ -102,7 +105,7 @@ public struct PersistenceScanner {
         scanCronFiles(items: &items, checks: &checks, shouldCancel: shouldCancel, isCancelled: &isCancelled)
         scanPeriodicScripts(items: &items, checks: &checks, shouldCancel: shouldCancel, isCancelled: &isCancelled)
         recordBestEffortLocations(title: "Configuration Profiles", locations: configuration.profileLocations, checks: &checks, shouldCancel: shouldCancel, isCancelled: &isCancelled)
-        recordBestEffortLocations(title: "Login Items", locations: configuration.loginItemLocations, checks: &checks, shouldCancel: shouldCancel, isCancelled: &isCancelled)
+        scanLoginItems(items: &items, checks: &checks, shouldCancel: shouldCancel, isCancelled: &isCancelled)
 
         return PersistenceScanSummary(
             assessedItems: assess(items: items, baseline: baseline),
@@ -251,6 +254,53 @@ public struct PersistenceScanner {
                 status: isDirectory.boolValue ? .bestEffort : .scanned
             ))
         }
+    }
+
+    private func scanLoginItems(
+        items: inout [PersistenceItem],
+        checks: inout [PersistenceLocationCheck],
+        shouldCancel: @escaping @Sendable () -> Bool,
+        isCancelled: inout Bool
+    ) {
+        guard !isCancelled, !shouldCancel() else {
+            isCancelled = true
+            return
+        }
+
+        let inventory = loginItemInventoryProvider.inventoryLoginItems()
+
+        for detail in inventory.items {
+            guard !shouldCancel() else {
+                isCancelled = true
+                break
+            }
+
+            let executablePath = detail.executableURL?.path
+            let executableHash = executablePath.flatMap { hashExecutable(atPath: $0) }
+            let codeSignature = executablePath.flatMap { inspectExecutable(atPath: $0) }
+            let sourceURL = detail.bundleURL ?? detail.executableURL
+
+            items.append(PersistenceItem(
+                kind: .loginItem,
+                label: detail.displayName,
+                sourceURL: sourceURL,
+                executablePath: executablePath,
+                arguments: [],
+                contentSHA256: nil,
+                executableSHA256: executableHash,
+                codeSignature: codeSignature,
+                riskFlags: riskFlags(kind: .loginItem, label: detail.displayName, sourceURL: sourceURL, executablePath: executablePath, codeSignature: codeSignature),
+                loginItemDetails: detail
+            ))
+        }
+
+        checks.append(PersistenceLocationCheck(
+            title: "Login Items",
+            url: nil,
+            status: inventory.status,
+            itemCount: inventory.items.count,
+            message: inventory.message
+        ))
     }
 
     private func launchdItem(kind: PersistenceItemKind, plistURL: URL) -> PersistenceItem? {
@@ -485,12 +535,12 @@ public struct PersistenceScanner {
     private func riskFlags(
         kind: PersistenceItemKind,
         label: String,
-        sourceURL: URL,
+        sourceURL: URL?,
         executablePath: String?,
         codeSignature: CodeSignatureAssessment?
     ) -> [PersistenceRiskFlag] {
         var flags: [PersistenceRiskFlag] = []
-        let sourcePath = sourceURL.path
+        let sourcePath = sourceURL?.path
         let executable = executablePath?.lowercased() ?? ""
 
         if executable.hasPrefix("/tmp/") || executable.hasPrefix("/private/tmp/") || executable.hasPrefix("/var/tmp/") {
@@ -501,11 +551,11 @@ public struct PersistenceScanner {
             flags.append(.runsFromDownloadsOrDesktop)
         }
 
-        if label.hasPrefix("com.apple."), !sourcePath.hasPrefix("/System/Library/") {
+        if label.hasPrefix("com.apple."), sourcePath?.hasPrefix("/System/Library/") != true {
             flags.append(.appleLabelOutsideSystemLocation)
         }
 
-        if kind == .launchDaemon, !sourcePath.hasPrefix("/System/Library/") {
+        if kind == .launchDaemon, sourcePath?.hasPrefix("/System/Library/") != true {
             flags.append(.rootDaemonOutsideSystemLocation)
         }
 

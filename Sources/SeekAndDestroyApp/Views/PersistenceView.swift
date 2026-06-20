@@ -210,6 +210,10 @@ private struct PersistenceAssessmentRow: View {
                 CodeSignatureBlock(assessment: codeSignature)
             }
 
+            if let details = assessment.item.loginItemDetails {
+                LoginItemDetailsBlock(details: details)
+            }
+
             if !assessment.item.riskFlags.isEmpty {
                 Text(assessment.item.riskFlags.map(\.title).joined(separator: ", "))
                     .font(.caption)
@@ -230,6 +234,54 @@ private struct PersistenceAssessmentRow: View {
             return .green
         case .noBaseline:
             return .secondary
+        }
+    }
+}
+
+private struct LoginItemDetailsBlock: View {
+    let details: LoginItemDetails
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let bundleIdentifier = details.bundleIdentifier {
+                detailLine("Bundle ID", bundleIdentifier)
+            }
+
+            if let teamIdentifier = details.teamIdentifier {
+                detailLine("Team ID", teamIdentifier)
+            }
+
+            if let developerName = details.developerName {
+                detailLine("Developer", developerName)
+            }
+
+            if let itemType = details.itemType {
+                detailLine("Item Type", itemType)
+            }
+
+            if let disposition = details.disposition {
+                detailLine("Disposition", disposition)
+            }
+
+            if let bundleURL = details.bundleURL {
+                detailLine("Bundle", bundleURL.path)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func detailLine(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 130, alignment: .leading)
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
         }
     }
 }
@@ -382,6 +434,15 @@ private struct LocationCheckRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            if let message = check.message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .truncationMode(.tail)
+                    .textSelection(.enabled)
+            }
         }
         .padding(.vertical, 5)
     }
@@ -396,6 +457,8 @@ private struct LocationCheckRow: View {
             return .orange
         case .bestEffort:
             return .blue
+        case .permissionDenied:
+            return .orange
         }
     }
 }

@@ -67,12 +67,20 @@ public struct PersistenceLocationCheck: Equatable, Identifiable, Sendable {
     public let url: URL?
     public let status: PersistenceLocationStatus
     public let itemCount: Int
+    public let message: String?
 
-    public init(title: String, url: URL?, status: PersistenceLocationStatus, itemCount: Int = 0) {
+    public init(
+        title: String,
+        url: URL?,
+        status: PersistenceLocationStatus,
+        itemCount: Int = 0,
+        message: String? = nil
+    ) {
         self.title = title
         self.url = url?.resolvingSymlinksInPath()
         self.status = status
         self.itemCount = itemCount
+        self.message = message
         self.id = "\(title)|\(self.url?.path ?? "no-url")"
     }
 }
@@ -82,4 +90,5 @@ public enum PersistenceLocationStatus: String, Codable, Sendable {
     case missing = "Missing"
     case unreadable = "Unreadable"
     case bestEffort = "Best Effort"
+    case permissionDenied = "Permission Denied"
 }
