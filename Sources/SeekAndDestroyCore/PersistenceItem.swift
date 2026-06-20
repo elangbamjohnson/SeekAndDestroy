@@ -17,6 +17,7 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
     public let contentSHA256: String?
     public let executableSHA256: String?
     public let riskFlags: [PersistenceRiskFlag]
+    public let launchdDetails: LaunchdDetails?
 
     public init(
         kind: PersistenceItemKind,
@@ -26,7 +27,8 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
         arguments: [String] = [],
         contentSHA256: String?,
         executableSHA256: String?,
-        riskFlags: [PersistenceRiskFlag] = []
+        riskFlags: [PersistenceRiskFlag] = [],
+        launchdDetails: LaunchdDetails? = nil
     ) {
         self.kind = kind
         self.label = label
@@ -36,9 +38,123 @@ public struct PersistenceItem: Codable, Equatable, Identifiable, Sendable {
         self.contentSHA256 = contentSHA256
         self.executableSHA256 = executableSHA256
         self.riskFlags = riskFlags
+        self.launchdDetails = launchdDetails
 
         let sourcePath = self.sourceURL?.path ?? "no-source"
         self.id = "\(kind.rawValue)|\(sourcePath)|\(label)"
+    }
+}
+
+public struct LaunchdDetails: Codable, Equatable, Sendable {
+    public let runAtLoad: Bool?
+    public let keepAlive: LaunchdKeepAliveDetails?
+    public let startInterval: Int?
+    public let startCalendarIntervals: [String]
+    public let watchPaths: [String]
+    public let queueDirectories: [String]
+    public let machServices: [String]
+    public let sockets: [String]
+    public let standardOutPath: String?
+    public let standardErrorPath: String?
+    public let workingDirectory: String?
+    public let environmentVariables: [String: String]
+
+    public init(
+        runAtLoad: Bool?,
+        keepAlive: LaunchdKeepAliveDetails?,
+        startInterval: Int?,
+        startCalendarIntervals: [String] = [],
+        watchPaths: [String] = [],
+        queueDirectories: [String] = [],
+        machServices: [String] = [],
+        sockets: [String] = [],
+        standardOutPath: String? = nil,
+        standardErrorPath: String? = nil,
+        workingDirectory: String? = nil,
+        environmentVariables: [String: String] = [:]
+    ) {
+        self.runAtLoad = runAtLoad
+        self.keepAlive = keepAlive
+        self.startInterval = startInterval
+        self.startCalendarIntervals = startCalendarIntervals
+        self.watchPaths = watchPaths
+        self.queueDirectories = queueDirectories
+        self.machServices = machServices
+        self.sockets = sockets
+        self.standardOutPath = standardOutPath
+        self.standardErrorPath = standardErrorPath
+        self.workingDirectory = workingDirectory
+        self.environmentVariables = environmentVariables
+    }
+
+    public var hasDisplayedValues: Bool {
+        runAtLoad != nil
+            || keepAlive != nil
+            || startInterval != nil
+            || !startCalendarIntervals.isEmpty
+            || !watchPaths.isEmpty
+            || !queueDirectories.isEmpty
+            || !machServices.isEmpty
+            || !sockets.isEmpty
+            || standardOutPath != nil
+            || standardErrorPath != nil
+            || workingDirectory != nil
+            || !environmentVariables.isEmpty
+    }
+}
+
+public struct LaunchdKeepAliveDetails: Codable, Equatable, Sendable {
+    public let enabled: Bool?
+    public let successfulExit: Bool?
+    public let crashed: Bool?
+    public let networkState: Bool?
+    public let pathStateKeys: [String]
+    public let otherKeys: [String]
+
+    public init(
+        enabled: Bool? = nil,
+        successfulExit: Bool? = nil,
+        crashed: Bool? = nil,
+        networkState: Bool? = nil,
+        pathStateKeys: [String] = [],
+        otherKeys: [String] = []
+    ) {
+        self.enabled = enabled
+        self.successfulExit = successfulExit
+        self.crashed = crashed
+        self.networkState = networkState
+        self.pathStateKeys = pathStateKeys
+        self.otherKeys = otherKeys
+    }
+
+    public var displaySummary: String {
+        var parts: [String] = []
+
+        if let enabled {
+            parts.append(enabled ? "enabled" : "disabled")
+        }
+
+        if let successfulExit {
+            parts.append("SuccessfulExit=\(successfulExit)")
+        }
+
+        if let crashed {
+            parts.append("Crashed=\(crashed)")
+        }
+
+        if let networkState {
+            parts.append("NetworkState=\(networkState)")
+        }
+
+        if !pathStateKeys.isEmpty {
+            parts.append("PathState: \(pathStateKeys.joined(separator: ", "))")
+        }
+
+        if !otherKeys.isEmpty {
+            parts.append("Other: \(otherKeys.joined(separator: ", "))")
+        }
+
+        return parts.isEmpty ? "configured" : parts.joined(separator: "; ")
     }
 }
 

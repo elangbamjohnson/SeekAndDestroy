@@ -33,6 +33,104 @@ struct PersistenceScannerTests {
         #expect(summary.assessedItems[0].item.kind == .launchAgent)
         #expect(summary.assessedItems[0].item.label == "com.example.helper")
         #expect(summary.assessedItems[0].baselineStatus == .noBaseline)
+        #expect(summary.assessedItems[0].item.launchdDetails?.runAtLoad == true)
+    }
+
+    @Test
+    func parsesLaunchdBehaviorFields() throws {
+        let fixture = try PersistenceFixture()
+        defer {
+            fixture.cleanUp()
+        }
+
+        let executableURL = fixture.root.appendingPathComponent("helper.sh")
+        try "#!/bin/sh\n".write(to: executableURL, atomically: true, encoding: .utf8)
+
+        _ = try fixture.writeLaunchAgentPlist(
+            label: "com.example.rich",
+            body: """
+              <key>ProgramArguments</key>
+              <array>
+                <string>\(executableURL.path)</string>
+              </array>
+              <key>RunAtLoad</key>
+              <true/>
+              <key>KeepAlive</key>
+              <dict>
+                <key>SuccessfulExit</key>
+                <false/>
+                <key>Crashed</key>
+                <true/>
+                <key>NetworkState</key>
+                <true/>
+                <key>PathState</key>
+                <dict>
+                  <key>/tmp/trigger</key>
+                  <true/>
+                </dict>
+              </dict>
+              <key>StartInterval</key>
+              <integer>300</integer>
+              <key>StartCalendarInterval</key>
+              <array>
+                <dict>
+                  <key>Hour</key>
+                  <integer>2</integer>
+                  <key>Minute</key>
+                  <integer>30</integer>
+                </dict>
+              </array>
+              <key>WatchPaths</key>
+              <array>
+                <string>/Users/example/Library/Application Support</string>
+              </array>
+              <key>QueueDirectories</key>
+              <array>
+                <string>/Users/example/Library/Caches</string>
+              </array>
+              <key>MachServices</key>
+              <dict>
+                <key>com.example.rich.service</key>
+                <true/>
+              </dict>
+              <key>Sockets</key>
+              <dict>
+                <key>Listener</key>
+                <dict/>
+              </dict>
+              <key>StandardOutPath</key>
+              <string>/tmp/rich.out</string>
+              <key>StandardErrorPath</key>
+              <string>/tmp/rich.err</string>
+              <key>WorkingDirectory</key>
+              <string>/tmp</string>
+              <key>EnvironmentVariables</key>
+              <dict>
+                <key>MODE</key>
+                <string>test</string>
+              </dict>
+            """
+        )
+
+        let scanner = PersistenceScanner(configuration: fixture.configuration)
+        let item = scanner.scan().assessedItems[0].item
+        let details = try #require(item.launchdDetails)
+
+        #expect(details.runAtLoad == true)
+        #expect(details.keepAlive?.successfulExit == false)
+        #expect(details.keepAlive?.crashed == true)
+        #expect(details.keepAlive?.networkState == true)
+        #expect(details.keepAlive?.pathStateKeys == ["/tmp/trigger"])
+        #expect(details.startInterval == 300)
+        #expect(details.startCalendarIntervals == ["Hour=2, Minute=30"])
+        #expect(details.watchPaths == ["/Users/example/Library/Application Support"])
+        #expect(details.queueDirectories == ["/Users/example/Library/Caches"])
+        #expect(details.machServices == ["com.example.rich.service"])
+        #expect(details.sockets == ["Listener"])
+        #expect(details.standardOutPath == "/tmp/rich.out")
+        #expect(details.standardErrorPath == "/tmp/rich.err")
+        #expect(details.workingDirectory == "/tmp")
+        #expect(details.environmentVariables == ["MODE": "test"])
     }
 
     @Test
@@ -120,6 +218,20 @@ private struct PersistenceFixture {
     }
 
     func writeLaunchAgent(label: String, executablePath: String) throws -> URL {
+        try writeLaunchAgentPlist(
+            label: label,
+            body: """
+              <key>ProgramArguments</key>
+              <array>
+                <string>\(executablePath)</string>
+              </array>
+              <key>RunAtLoad</key>
+              <true/>
+            """
+        )
+    }
+
+    func writeLaunchAgentPlist(label: String, body: String) throws -> URL {
         let plistURL = launchAgents.appendingPathComponent("\(label).plist")
         try """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -128,12 +240,7 @@ private struct PersistenceFixture {
         <dict>
           <key>Label</key>
           <string>\(label)</string>
-          <key>ProgramArguments</key>
-          <array>
-            <string>\(executablePath)</string>
-          </array>
-          <key>RunAtLoad</key>
-          <true/>
+        \(body)
         </dict>
         </plist>
         """.write(to: plistURL, atomically: true, encoding: .utf8)

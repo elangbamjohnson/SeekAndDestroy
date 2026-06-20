@@ -262,6 +262,7 @@ public struct PersistenceScanner {
         let executablePath = dictionary["Program"] as? String ?? arguments.first
         let sourceHash = try? hasher.sha256(forFileAt: plistURL)
         let executableHash = executablePath.flatMap { hashExecutable(atPath: $0) }
+        let launchdDetails = parseLaunchdDetails(from: dictionary)
 
         return PersistenceItem(
             kind: kind,
@@ -271,8 +272,96 @@ public struct PersistenceScanner {
             arguments: arguments,
             contentSHA256: sourceHash,
             executableSHA256: executableHash,
-            riskFlags: riskFlags(kind: kind, label: label, sourceURL: plistURL, executablePath: executablePath)
+            riskFlags: riskFlags(kind: kind, label: label, sourceURL: plistURL, executablePath: executablePath),
+            launchdDetails: launchdDetails
         )
+    }
+
+    private func parseLaunchdDetails(from dictionary: [String: Any]) -> LaunchdDetails {
+        LaunchdDetails(
+            runAtLoad: dictionary["RunAtLoad"] as? Bool,
+            keepAlive: parseKeepAlive(dictionary["KeepAlive"]),
+            startInterval: dictionary["StartInterval"] as? Int,
+            startCalendarIntervals: parseStartCalendarIntervals(dictionary["StartCalendarInterval"]),
+            watchPaths: sortedStrings(dictionary["WatchPaths"]),
+            queueDirectories: sortedStrings(dictionary["QueueDirectories"]),
+            machServices: sortedDictionaryKeys(dictionary["MachServices"]),
+            sockets: sortedDictionaryKeys(dictionary["Sockets"]),
+            standardOutPath: dictionary["StandardOutPath"] as? String,
+            standardErrorPath: dictionary["StandardErrorPath"] as? String,
+            workingDirectory: dictionary["WorkingDirectory"] as? String,
+            environmentVariables: parseStringDictionary(dictionary["EnvironmentVariables"])
+        )
+    }
+
+    private func parseKeepAlive(_ value: Any?) -> LaunchdKeepAliveDetails? {
+        if let enabled = value as? Bool {
+            return LaunchdKeepAliveDetails(enabled: enabled)
+        }
+
+        guard let dictionary = value as? [String: Any] else {
+            return nil
+        }
+
+        let handledKeys = Set(["SuccessfulExit", "Crashed", "NetworkState", "PathState"])
+        let pathState = dictionary["PathState"] as? [String: Any]
+        let pathStateKeys = pathState?.keys.sorted() ?? []
+        let otherKeys = dictionary.keys
+            .filter { !handledKeys.contains($0) }
+            .sorted()
+
+        return LaunchdKeepAliveDetails(
+            successfulExit: dictionary["SuccessfulExit"] as? Bool,
+            crashed: dictionary["Crashed"] as? Bool,
+            networkState: dictionary["NetworkState"] as? Bool,
+            pathStateKeys: pathStateKeys,
+            otherKeys: otherKeys
+        )
+    }
+
+    private func parseStartCalendarIntervals(_ value: Any?) -> [String] {
+        if let dictionary = value as? [String: Any] {
+            return [calendarIntervalDescription(dictionary)]
+        }
+
+        if let dictionaries = value as? [[String: Any]] {
+            return dictionaries
+                .map(calendarIntervalDescription)
+                .sorted()
+        }
+
+        return []
+    }
+
+    private func calendarIntervalDescription(_ dictionary: [String: Any]) -> String {
+        dictionary.keys
+            .sorted()
+            .map { key in
+                "\(key)=\(dictionary[key] ?? "")"
+            }
+            .joined(separator: ", ")
+    }
+
+    private func sortedStrings(_ value: Any?) -> [String] {
+        if let string = value as? String {
+            return [string]
+        }
+
+        return (value as? [String] ?? []).sorted()
+    }
+
+    private func sortedDictionaryKeys(_ value: Any?) -> [String] {
+        (value as? [String: Any])?.keys.sorted() ?? []
+    }
+
+    private func parseStringDictionary(_ value: Any?) -> [String: String] {
+        guard let dictionary = value as? [String: Any] else {
+            return [:]
+        }
+
+        return dictionary.reduce(into: [:]) { result, entry in
+            result[entry.key] = "\(entry.value)"
+        }
     }
 
     private func scanCronFile(_ fileURL: URL, items: inout [PersistenceItem]) -> PersistenceLocationStatus {

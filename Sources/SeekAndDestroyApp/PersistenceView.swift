@@ -202,6 +202,10 @@ private struct PersistenceAssessmentRow: View {
                     .textSelection(.enabled)
             }
 
+            if let details = assessment.item.launchdDetails, details.hasDisplayedValues {
+                LaunchdDetailsBlock(details: details)
+            }
+
             if !assessment.item.riskFlags.isEmpty {
                 Text(assessment.item.riskFlags.map(\.title).joined(separator: ", "))
                     .font(.caption)
@@ -222,6 +226,82 @@ private struct PersistenceAssessmentRow: View {
             return .green
         case .noBaseline:
             return .secondary
+        }
+    }
+}
+
+private struct LaunchdDetailsBlock: View {
+    let details: LaunchdDetails
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let runAtLoad = details.runAtLoad {
+                detailLine("RunAtLoad", runAtLoad ? "true" : "false")
+            }
+
+            if let keepAlive = details.keepAlive {
+                detailLine("KeepAlive", keepAlive.displaySummary)
+            }
+
+            if let startInterval = details.startInterval {
+                detailLine("StartInterval", "\(startInterval)s")
+            }
+
+            if !details.startCalendarIntervals.isEmpty {
+                detailLine("StartCalendarInterval", details.startCalendarIntervals.joined(separator: " | "))
+            }
+
+            if !details.watchPaths.isEmpty {
+                detailLine("WatchPaths", details.watchPaths.joined(separator: ", "))
+            }
+
+            if !details.queueDirectories.isEmpty {
+                detailLine("QueueDirectories", details.queueDirectories.joined(separator: ", "))
+            }
+
+            if !details.machServices.isEmpty {
+                detailLine("MachServices", details.machServices.joined(separator: ", "))
+            }
+
+            if !details.sockets.isEmpty {
+                detailLine("Sockets", details.sockets.joined(separator: ", "))
+            }
+
+            if let standardOutPath = details.standardOutPath {
+                detailLine("StandardOutPath", standardOutPath)
+            }
+
+            if let standardErrorPath = details.standardErrorPath {
+                detailLine("StandardErrorPath", standardErrorPath)
+            }
+
+            if let workingDirectory = details.workingDirectory {
+                detailLine("WorkingDirectory", workingDirectory)
+            }
+
+            if !details.environmentVariables.isEmpty {
+                let variables = details.environmentVariables.keys
+                    .sorted()
+                    .map { "\($0)=\(details.environmentVariables[$0] ?? "")" }
+                    .joined(separator: ", ")
+                detailLine("Environment", variables)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func detailLine(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 130, alignment: .leading)
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
         }
     }
 }
