@@ -210,28 +210,34 @@ flowchart TD
 Package.swift
 Sources/
   SeekAndDestroyApp/
-    SeekAndDestroyApp.swift        macOS SwiftUI app entry point
-    ContentView.swift              main UI, mode switch, scan controls
-    ScanViewModel.swift            Phase 1 file scan UI state
-    PersistenceView.swift          Phase 2 persistence UI
-    PersistenceViewModel.swift     baseline and persistence scan UI state
+    App/
+      SeekAndDestroyApp.swift      macOS SwiftUI app entry point
+    Views/
+      ContentView.swift            main UI, mode switch, scan controls
+      PersistenceView.swift        Phase 2 persistence UI
+    ViewModels/
+      ScanViewModel.swift          Phase 1 file scan UI state
+      PersistenceViewModel.swift   baseline and persistence scan UI state
   SeekAndDestroyCore/
-    OnDemandScanner.swift          recursive scanner and progress events
-    SHA256FileHasher.swift         streaming SHA-256 hashing
-    HashThreatDatabase.swift       local hash list loader
-    ScanFinding.swift              file scan finding model
-    ScanSummary.swift              file scan summary model
-    ScanProgressEvent.swift        live scan progress events
-    PersistenceScanner.swift       Phase 2 persistence scanner
-    PersistenceItem.swift          persistence item and risk models
-    PersistenceBaseline.swift      baseline JSON store
-    PersistenceScanSummary.swift   persistence scan result models
+    Domain/
+      Scanning/                    file scan models and progress events
+      Persistence/                 persistence item and result models
+    Application/
+      Scanning/                    recursive scan orchestration
+      Persistence/                 persistence scan orchestration
+    Infrastructure/
+      Hashing/                     streaming SHA-256 hashing
+      ThreatIntel/                 local hash list loader
+      Baseline/                    baseline JSON store
+    Support/                       preserved local support files
     Resources/ThreatIntel/
       malicious_hashes.txt         local malicious hash list
   seekanddestroy/
     main.swift                     CLI entry point
 Tests/
   SeekAndDestroyCoreTests/
+    Application/
+    Infrastructure/
 ```
 
 ## How Detection Works Today
